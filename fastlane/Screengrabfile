@@ -1,4 +1,4 @@
-app_package_name('de.lukasneugebauer.nextcloudcookbook.debug')
+app_package_name('de.garmir.cookbook.debug')
 use_tests_in_packages(['de.lukasneugebauer.nextcloudcookbook.screenshots'])
 
 app_apk_path('app/build/outputs/apk/full/debug/app-full-debug.apk')

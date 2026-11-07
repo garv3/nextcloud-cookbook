@@ -35,7 +35,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "de.lukasneugebauer.nextcloudcookbook"
+        applicationId "de.garmir.cookbook"
         minSdk 25
         targetSdk 36
         versionCode 64
