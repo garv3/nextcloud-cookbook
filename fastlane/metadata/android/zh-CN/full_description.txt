@@ -18,3 +18,5 @@
 - 通过二维码登录
 
 使用此应用需要有最新食谱应用的可公开访问的 Nextcloud 服务器。
+
+Cookbook GarMir is a customized version of the open-source app "Nextcloud Cookbook" by Lukas Neugebauer (MIT license) that can also add ingredients to a shopping list in Nextcloud Tasks. Please do not report issues that only affect this version to the original project.

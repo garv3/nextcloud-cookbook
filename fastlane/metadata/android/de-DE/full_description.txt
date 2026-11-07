@@ -18,3 +18,5 @@ Fehlende, aber geplante Funktionen:
 - Anmeldung über QR-Code
 
 Für die Nutzung dieser App ist ein öffentlich zugänglicher Nextcloud-Server mit der neuesten Kochbuch-App erforderlich.
+
+Cookbook GarMir ist eine angepasste Version der Open-Source-App „Nextcloud Cookbook“ von Lukas Neugebauer (MIT-Lizenz) und kann zusätzlich Zutaten auf eine Einkaufsliste in Nextcloud Tasks übertragen. Fehler, die nur diese Version betreffen, bitte nicht beim Originalprojekt melden.

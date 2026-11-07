@@ -1,0 +1,3 @@
+# Store-Texte von Cookbook GarMir bei Merges aus dem Feature-Branch/Upstream behalten
+fastlane/metadata/android/*/title.txt merge=ours
+fastlane/metadata/android/*/full_description.txt merge=ours
