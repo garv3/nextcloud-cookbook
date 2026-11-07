@@ -6,14 +6,14 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.lukasneugebauer.nextcloudcookbook.R
 import de.lukasneugebauer.nextcloudcookbook.core.data.PreferencesManager
+import de.lukasneugebauer.nextcloudcookbook.core.util.DataResult
 import de.lukasneugebauer.nextcloudcookbook.core.util.Resource
 import de.lukasneugebauer.nextcloudcookbook.core.util.UiText
-import de.lukasneugebauer.nextcloudcookbook.core.util.asUiText
-import de.lukasneugebauer.nextcloudcookbook.recipe.data.dto.RecipePreviewDto
 import de.lukasneugebauer.nextcloudcookbook.recipe.domain.RecipeFormatter
 import de.lukasneugebauer.nextcloudcookbook.recipe.domain.YieldCalculator
 import de.lukasneugebauer.nextcloudcookbook.recipe.domain.model.Ingredient
 import de.lukasneugebauer.nextcloudcookbook.recipe.domain.model.Recipe
+import de.lukasneugebauer.nextcloudcookbook.recipe.domain.model.RecipePreview
 import de.lukasneugebauer.nextcloudcookbook.recipe.domain.repository.RecipeRepository
 import de.lukasneugebauer.nextcloudcookbook.recipe.domain.state.RecipeDetailState
 import de.lukasneugebauer.nextcloudcookbook.recipe.domain.state.ShoppingListResult
@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.mobilenativefoundation.store.store5.StoreReadResponse
 import javax.inject.Inject
 
 @HiltViewModel
@@ -42,6 +41,8 @@ class RecipeDetailViewModel
     ) : ViewModel() {
         private val _state = MutableStateFlow(RecipeDetailState())
         val state: StateFlow<RecipeDetailState> = _state
+
+        private var isYieldChangedByUser = false
 
         val stayAwake: Boolean
             get() = preferencesManager.getStayAwake()
@@ -61,58 +62,42 @@ class RecipeDetailViewModel
                 preferencesManager.preferencesFlow,
                 recipeRepository.getRecipeFlow(id),
                 recipeRepository.getRecipePreviewsFlow(),
-            ) { preferences, recipeResponse, recipePreviewsResponse ->
-                val recipePreviewDtos =
-                    when (recipePreviewsResponse) {
-                        is StoreReadResponse.Data -> recipePreviewsResponse.dataOrNull()
-                        else -> null
-                    }
-                Triple(preferences, recipeResponse, recipePreviewDtos)
-            }.onEach { (preferences, recipeResponse, recipePreviewDtos) ->
+            ) { preferences, recipeResult, recipePreviewsResult ->
+                val recipePreviews = (recipePreviewsResult as? DataResult.Success)?.data
+                Triple(preferences, recipeResult, recipePreviews)
+            }.onEach { (preferences, recipeResult, recipePreviews) ->
                 val isShowIngredientSyntaxIndicator = preferences.isShowIngredientSyntaxIndicator
                 _state.update { it.copy(isShoppingListConfigured = preferences.shoppingList != null) }
-                when (recipeResponse) {
-                    is StoreReadResponse.Loading ->
+                when (recipeResult) {
+                    is DataResult.Loading ->
                         _state.value =
                             _state.value.copy(
                                 loading = true,
                                 isShowIngredientSyntaxIndicator = isShowIngredientSyntaxIndicator,
                             )
-                    is StoreReadResponse.Data -> {
-                        val recipe = enrichRecipeLinks(recipeResponse.value.toRecipe(), recipePreviewDtos)
+
+                    is DataResult.Success -> {
+                        val recipe = enrichRecipeLinks(recipeResult.data, recipePreviews)
+                        val currentYield = if (isYieldChangedByUser) _state.value.currentYield else recipe.yield
                         _state.value =
                             _state.value.copy(
                                 calculatedIngredients =
                                     yieldCalculator.recalculateIngredients(
                                         recipe.ingredients.map { it.value },
-                                        recipe.yield,
+                                        currentYield,
                                         recipe.yield,
                                     ),
-                                currentYield = recipe.yield,
+                                currentYield = currentYield,
                                 data = recipe,
                                 loading = false,
                                 isShowIngredientSyntaxIndicator = isShowIngredientSyntaxIndicator,
                             )
                     }
 
-                    is StoreReadResponse.NoNewData ->
+                    is DataResult.Error ->
                         _state.value =
                             _state.value.copy(
-                                loading = false,
-                                isShowIngredientSyntaxIndicator = isShowIngredientSyntaxIndicator,
-                            )
-                    is StoreReadResponse.Error.Exception ->
-                        _state.value =
-                            _state.value.copy(
-                                error = recipeResponse.errorMessageOrNull()?.asUiText(),
-                                loading = false,
-                                isShowIngredientSyntaxIndicator = isShowIngredientSyntaxIndicator,
-                            )
-
-                    is StoreReadResponse.Error.Message ->
-                        _state.value =
-                            _state.value.copy(
-                                error = recipeResponse.message.asUiText(),
+                                error = recipeResult.message,
                                 loading = false,
                                 isShowIngredientSyntaxIndicator = isShowIngredientSyntaxIndicator,
                             )
@@ -122,22 +107,26 @@ class RecipeDetailViewModel
 
         fun increaseYield() {
             val currentYield = _state.value.currentYield + 1
-            recalculateYield(currentYield)
+            recalculateYield(currentYield, isChangedByUser = true)
         }
 
         fun decreaseYield() {
             val currentYield = _state.value.currentYield - 1
             if (currentYield < 1) return
-            recalculateYield(currentYield)
+            recalculateYield(currentYield, isChangedByUser = true)
         }
 
         fun resetYield() {
             val recipe = _state.value.data ?: return
-            recalculateYield(recipe.yield)
+            recalculateYield(recipe.yield, isChangedByUser = false)
         }
 
-        private fun recalculateYield(currentYield: Int) {
+        private fun recalculateYield(
+            currentYield: Int,
+            isChangedByUser: Boolean,
+        ) {
             val recipe = _state.value.data ?: return
+            isYieldChangedByUser = isChangedByUser
             _state.value =
                 _state.value.copy(
                     calculatedIngredients =
@@ -165,12 +154,19 @@ class RecipeDetailViewModel
             return ""
         }
 
-        fun deleteRecipe(
-            id: String,
-            categoryName: String,
-        ) {
+        fun getIngredientAt(index: Int): String =
+            _state.value.calculatedIngredients
+                .getOrNull(index)
+                ?.ingredient
+                ?: _state.value.data
+                    ?.ingredients
+                    ?.getOrNull(index)
+                    ?.value
+                ?: ""
+
+        fun deleteRecipe(id: String) {
             viewModelScope.launch {
-                when (val deleteRecipeResource = recipeRepository.deleteRecipe(id, categoryName)) {
+                when (val deleteRecipeResource = recipeRepository.deleteRecipe(id)) {
                     is Resource.Success -> {
                         _state.value = _state.value.copy(deleted = true)
                     }
@@ -237,20 +233,20 @@ class RecipeDetailViewModel
 
         private fun enrichRecipeLinks(
             recipe: Recipe,
-            recipePreviewDtos: List<RecipePreviewDto>?,
+            recipePreviews: List<RecipePreview>?,
         ): Recipe {
             fun replace(text: String): String =
                 RECIPE_URL_REGEX.replace(text) { matchResult ->
                     val (shortId, fullId) = matchResult.destructured
 
                     if (shortId.isNotBlank()) {
-                        val recipePreviewDto =
-                            recipePreviewDtos?.firstOrNull { recipePreviewDto ->
-                                recipePreviewDto.id == shortId
+                        val recipePreview =
+                            recipePreviews?.firstOrNull { recipePreview ->
+                                recipePreview.id == shortId
                             }
 
-                        if (recipePreviewDto?.name?.isNotBlank() == true) {
-                            "[${recipePreviewDto.name} (#r/$shortId)](nccookbook://lneugebauer.github.io/recipe/$shortId)"
+                        if (recipePreview?.name?.isNotBlank() == true) {
+                            "[${recipePreview.name} (#r/$shortId)](nccookbook://lneugebauer.github.io/recipe/$shortId)"
                         } else {
                             "[#r/$shortId](nccookbook://lneugebauer.github.io/recipe/$shortId)"
                         }
